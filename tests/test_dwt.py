@@ -8,11 +8,7 @@ from contextlib import contextmanager
 PREC_FLT = 3
 PREC_DBL = 7
 
-HAVE_GPU = torch.cuda.is_available()
-if HAVE_GPU:
-    dev = torch.device('cuda')
-else:
-    dev = torch.device('cpu')
+dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @contextmanager
@@ -69,16 +65,17 @@ def test_equal(wave, J, mode):
     x2 = iwt((yl, yh))
 
     # Test the forward and inverse worked
-    np.testing.assert_array_almost_equal(x.cpu(), x2.detach().cpu(), decimal=PREC_FLT)
+    np.testing.assert_array_almost_equal(
+        x.cpu(), x2.detach().cpu(), decimal=PREC_FLT)
     # Test it is the same as doing the PyWavelets wavedec with reflection
     # padding
-    coeffs = pywt.wavedec2(x.cpu().numpy(), wave, level=J, axes=(-2,-1),
+    coeffs = pywt.wavedec2(x.cpu().numpy(), wave, level=J, axes=(-2, -1),
                            mode=mode)
     np.testing.assert_array_almost_equal(yl.cpu(), coeffs[0], decimal=PREC_FLT)
     for j in range(J):
         for b in range(3):
             np.testing.assert_array_almost_equal(
-                coeffs[J-j][b], yh[j][:,:,b].cpu(), decimal=PREC_FLT)
+                coeffs[J-j][b], yh[j][:, :, b].cpu(), decimal=PREC_FLT)
 
 
 @pytest.mark.parametrize("size", [
@@ -95,14 +92,17 @@ def test_equal_oddshape(size):
     x1 = iwt1((yl1, yh1))
 
     # Test it is the same as doing the PyWavelets wavedec
-    coeffs = pywt.wavedec2(x.cpu().numpy(), wave, level=J, axes=(-2,-1), mode=mode)
+    coeffs = pywt.wavedec2(x.cpu().numpy(), wave,
+                           level=J, axes=(-2, -1), mode=mode)
     X = pywt.waverec2(coeffs, wave, mode=mode)
-    np.testing.assert_array_almost_equal(X, x1.detach().cpu(), decimal=PREC_FLT)
-    np.testing.assert_array_almost_equal(yl1.cpu(), coeffs[0], decimal=PREC_FLT)
+    np.testing.assert_array_almost_equal(
+        X, x1.detach().cpu(), decimal=PREC_FLT)
+    np.testing.assert_array_almost_equal(
+        yl1.cpu(), coeffs[0], decimal=PREC_FLT)
     for j in range(J):
         for b in range(3):
             np.testing.assert_array_almost_equal(
-                coeffs[J-j][b], yh1[j][:,:,b].cpu(), decimal=PREC_FLT)
+                coeffs[J-j][b], yh1[j][:, :, b].cpu(), decimal=PREC_FLT)
 
 
 @pytest.mark.parametrize("size", [
@@ -119,14 +119,17 @@ def test_equal_oddshape2(size):
     x1 = iwt1((yl1, yh1))
 
     # Test it is the same as doing the PyWavelets wavedec
-    coeffs = pywt.wavedec2(x.cpu().numpy(), wave, level=J, axes=(-2,-1), mode=mode)
+    coeffs = pywt.wavedec2(x.cpu().numpy(), wave,
+                           level=J, axes=(-2, -1), mode=mode)
     X = pywt.waverec2(coeffs, wave, mode=mode)
-    np.testing.assert_array_almost_equal(X, x1.detach().cpu(), decimal=PREC_FLT)
-    np.testing.assert_array_almost_equal(yl1.cpu(), coeffs[0], decimal=PREC_FLT)
+    np.testing.assert_array_almost_equal(
+        X, x1.detach().cpu(), decimal=PREC_FLT)
+    np.testing.assert_array_almost_equal(
+        yl1.cpu(), coeffs[0], decimal=PREC_FLT)
     for j in range(J):
         for b in range(3):
             np.testing.assert_array_almost_equal(
-                coeffs[J-j][b], yh1[j][:,:,b].cpu(), decimal=PREC_FLT)
+                coeffs[J-j][b], yh1[j][:, :, b].cpu(), decimal=PREC_FLT)
 
 
 @pytest.mark.parametrize("wave, J, mode", [
@@ -151,13 +154,15 @@ def test_equal_double(wave, J, mode):
     x2 = iwt((yl, yh))
 
     # Test the forward and inverse worked
-    np.testing.assert_array_almost_equal(x.cpu(), x2.detach().cpu(), decimal=PREC_DBL)
-    coeffs = pywt.wavedec2(x.cpu().numpy(), wave, level=J, axes=(-2,-1), mode=mode)
+    np.testing.assert_array_almost_equal(
+        x.cpu(), x2.detach().cpu(), decimal=PREC_DBL)
+    coeffs = pywt.wavedec2(x.cpu().numpy(), wave,
+                           level=J, axes=(-2, -1), mode=mode)
     np.testing.assert_array_almost_equal(yl.cpu(), coeffs[0], decimal=7)
     for j in range(J):
         for b in range(3):
             np.testing.assert_array_almost_equal(
-                coeffs[J-j][b], yh[j][:,:,b].cpu(), decimal=PREC_DBL)
+                coeffs[J-j][b], yh[j][:, :, b].cpu(), decimal=PREC_DBL)
 
 
 @pytest.mark.parametrize("wave, J, j", [
@@ -176,19 +181,19 @@ def test_commutativity(wave, J, j):
     coeffs = dwt(Y)
     coeffs_zero = dwt(torch.zeros_like(Y))
     # Set level j LH to be nonzero
-    coeffs_zero[1][j][:,:,0] = coeffs[1][j][:,:,0]
+    coeffs_zero[1][j][:, :, 0] = coeffs[1][j][:, :, 0]
     ya = iwt(coeffs_zero)
     # Set level j HL to also be nonzero
-    coeffs_zero[1][j][:,:,1] = coeffs[1][j][:,:,1]
+    coeffs_zero[1][j][:, :, 1] = coeffs[1][j][:, :, 1]
     yab = iwt(coeffs_zero)
     # Set level j LH to be nonzero
-    coeffs_zero[1][j][:,:,0] = torch.zeros_like(coeffs[1][j][:,:,0])
+    coeffs_zero[1][j][:, :, 0] = torch.zeros_like(coeffs[1][j][:, :, 0])
     yb = iwt(coeffs_zero)
     # Set level j HH to also be nonzero
-    coeffs_zero[1][j][:,:,2] = coeffs[1][j][:,:,2]
+    coeffs_zero[1][j][:, :, 2] = coeffs[1][j][:, :, 2]
     ybc = iwt(coeffs_zero)
     # Set level j HL to be nonzero
-    coeffs_zero[1][j][:,:,1] = torch.zeros_like(coeffs[1][j][:,:,1])
+    coeffs_zero[1][j][:, :, 1] = torch.zeros_like(coeffs[1][j][:, :, 1])
     yc = iwt(coeffs_zero)
 
     np.testing.assert_array_almost_equal(
@@ -215,7 +220,7 @@ def test_commutativity(wave, J, j):
 def test_gradients_fwd(wave, J, mode):
     """ Gradient of forward function should be inverse function with filters
     swapped """
-    im = np.random.randn(5,6,128, 128).astype('float32')
+    im = np.random.randn(5, 6, 128, 128).astype('float32')
     imt = torch.tensor(im, dtype=torch.float32, requires_grad=True, device=dev)
 
     wave = pywt.Wavelet(wave)
@@ -275,7 +280,7 @@ def test_gradients_inv(wave, J, mode):
     iwt = DWTInverse(wave=inv_filts, mode=mode).to(dev)
 
     # Get the shape of the pyramid
-    temp = torch.zeros(5,6,128,128).to(dev)
+    temp = torch.zeros(5, 6, 128, 128).to(dev)
     l, h = dwt(temp)
     # Create our inputs
     yl = torch.randn(*l.shape, requires_grad=True, device=dev)

@@ -629,7 +629,7 @@ def sfb2d(ll, lh, hl, hh, filts, mode='zero'):
         g0, g1 = filts
         if True in tensorize:
             g0_col, g1_col, g0_row, g1_row = prep_filt_sfb2d(
-                g0, g1, device=ll.device, t=ll.dtype)
+                g0, g1, t=ll.dtype)
         else:
             g0_col = g0
             g0_row = g0.transpose(2, 3)
@@ -638,7 +638,7 @@ def sfb2d(ll, lh, hl, hh, filts, mode='zero'):
     elif len(filts) == 4:
         if True in tensorize:
             g0_col, g1_col, g0_row, g1_row = prep_filt_sfb2d(
-                *filts, device=ll.device, t=ll.dtype)
+                *filts, t=ll.dtype)
         else:
             g0_col, g1_col, g0_row, g1_row = filts
     else:
@@ -874,7 +874,7 @@ def prep_filt_sfb2d_nonsep(g0_col, g1_col, g0_row=None, g1_row=None,
     return filts
 
 
-def prep_filt_sfb2d(g0_col, g1_col, g0_row=None, g1_row=None, device=None, t=None):
+def prep_filt_sfb2d(g0_col, g1_col, g0_row=None, g1_row=None, device=None, t=torch.float):
     """
     Prepares the filters to be of the right form for the sfb2d function.  In
     particular, makes the tensors the right shape. It does not mirror image them
@@ -906,7 +906,7 @@ def prep_filt_sfb2d(g0_col, g1_col, g0_row=None, g1_row=None, device=None, t=Non
     return g0_col, g1_col, g0_row, g1_row
 
 
-def prep_filt_sfb1d(g0, g1, device=None, t=None):
+def prep_filt_sfb1d(g0, g1, device=None, t=torch.float):
     """
     Prepares the filters to be of the right form for the sfb1d function. In
     particular, makes the tensors the right shape. It does not mirror image them
@@ -922,14 +922,14 @@ def prep_filt_sfb1d(g0, g1, device=None, t=None):
     """
     g0 = np.array(g0).ravel()
     g1 = np.array(g1).ravel()
-    t = t or torch.get_default_dtype()
+    # t = torch.get_default_dtype()
     g0 = torch.tensor(g0, device=device, dtype=t).reshape((1, 1, -1))
     g1 = torch.tensor(g1, device=device, dtype=t).reshape((1, 1, -1))
 
     return g0, g1
 
 
-def prep_filt_afb2d(h0_col, h1_col, h0_row=None, h1_row=None, device=None, t=None):
+def prep_filt_afb2d(h0_col, h1_col, h0_row=None, h1_row=None, device=None, t=torch.float):
     """
     Prepares the filters to be of the right form for the afb2d function.  In
     particular, makes the tensors the right shape. It takes mirror images of
@@ -960,7 +960,7 @@ def prep_filt_afb2d(h0_col, h1_col, h0_row=None, h1_row=None, device=None, t=Non
     return h0_col, h1_col, h0_row, h1_row
 
 
-def prep_filt_afb1d(h0, h1, device=None, t=None):
+def prep_filt_afb1d(h0, h1, device=None, t=torch.float):
     """
     Prepares the filters to be of the right form for the afb2d function.  In
     particular, makes the tensors the right shape. It takes mirror images of
@@ -976,7 +976,7 @@ def prep_filt_afb1d(h0, h1, device=None, t=None):
     """
     h0 = np.array(h0[::-1]).ravel()
     h1 = np.array(h1[::-1]).ravel()
-    t = t or torch.get_default_dtype()
+    # t = torch.get_default_dtype()
     h0 = torch.tensor(h0, device=device, dtype=t).reshape((1, 1, -1))
     h1 = torch.tensor(h1, device=device, dtype=t).reshape((1, 1, -1))
     return h0, h1

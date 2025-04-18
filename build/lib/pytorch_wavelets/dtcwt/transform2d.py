@@ -41,7 +41,6 @@ class DTCWTForward(nn.Module):
         o_dim (int): Which dimension to put the orientations in
         ri_dim (int): which dimension to put the real and imaginary parts
     """
-
     def __init__(self, biort='near_sym_a', qshift='qshift_a',
                  J=3, skip_hps=False, include_scale=False,
                  o_dim=2, ri_dim=-1, mode='symmetric'):
@@ -111,22 +110,14 @@ class DTCWTForward(nn.Module):
         mode = mode_to_int(self.mode)
         if self.J == 0:
             return x, None
-        if self.h0o.dtype != x.dtype:
-            # Cast buffered variables to the same type as x
-            self.h0o = self.h0o.to(x.dtype)
-            self.h1o = self.h1o.to(x.dtype)
-            self.h0a = self.h0a.to(x.dtype)
-            self.h0b = self.h0b.to(x.dtype)
-            self.h1a = self.h1a.to(x.dtype)
-            self.h1b = self.h1b.to(x.dtype)
 
         # If the row/col count of X is not divisible by 2 then we need to
         # extend X
         r, c = x.shape[2:]
         if r % 2 != 0:
-            x = torch.cat((x, x[:, :, -1:]), dim=2)
+            x = torch.cat((x, x[:,:,-1:]), dim=2)
         if c % 2 != 0:
-            x = torch.cat((x, x[:, :, :, -1:]), dim=3)
+            x = torch.cat((x, x[:,:,:,-1:]), dim=3)
 
         # Do the level 1 transform
         low, h = FWD_J1.apply(x, self.h0o, self.h1o, self.skip_hps[0],
@@ -139,10 +130,9 @@ class DTCWTForward(nn.Module):
             # Ensure the lowpass is divisible by 4
             r, c = low.shape[2:]
             if r % 4 != 0:
-                low = torch.cat((low[:, :, 0:1], low, low[:, :, -1:]), dim=2)
+                low = torch.cat((low[:,:,0:1], low, low[:,:,-1:]), dim=2)
             if c % 4 != 0:
-                low = torch.cat(
-                    (low[:, :, :, 0:1], low, low[:, :, :, -1:]), dim=3)
+                low = torch.cat((low[:,:,:,0:1], low, low[:,:,:,-1:]), dim=3)
 
             low, h = FWD_J2PLUS.apply(low, self.h0a, self.h1a, self.h0b,
                                       self.h1b, self.skip_hps[j], self.o_dim,
@@ -229,16 +219,6 @@ class DTCWTInverse(nn.Module):
         low, highs = coeffs
         J = len(highs)
         mode = mode_to_int(self.mode)
-
-        if self.g0o.dtype != low.dtype:
-            # Cast buffered variables to the same type as low
-            self.g0o = self.g0o.to(low.dtype)
-            self.g1o = self.g1o.to(low.dtype)
-            self.g0a = self.g0a.to(low.dtype)
-            self.g0b = self.g0b.to(low.dtype)
-            self.g1a = self.g1a.to(low.dtype)
-            self.g1b = self.g1b.to(low.dtype)
-
         _, _, h_dim, w_dim = get_dimensions6(
             self.o_dim, self.ri_dim)
         for j, s in zip(range(J-1, 0, -1), highs[1:][::-1]):
@@ -253,9 +233,9 @@ class DTCWTInverse(nn.Module):
                 r, c = low.shape[2:]
                 r1, c1 = s.shape[h_dim], s.shape[w_dim]
                 if r != r1 * 2:
-                    low = low[:, :, 1:-1]
+                    low = low[:,:,1:-1]
                 if c != c1 * 2:
-                    low = low[:, :, :, 1:-1]
+                    low = low[:,:,:,1:-1]
 
             low = INV_J2PLUS.apply(low, s, self.g0a, self.g1a, self.g0b,
                                    self.g1b, self.o_dim, self.ri_dim, mode)
@@ -265,10 +245,12 @@ class DTCWTInverse(nn.Module):
             r, c = low.shape[2:]
             r1, c1 = highs[0].shape[h_dim], highs[0].shape[w_dim]
             if r != r1 * 2:
-                low = low[:, :, 1:-1]
+                low = low[:,:,1:-1]
             if c != c1 * 2:
-                low = low[:, :, :, 1:-1]
+                low = low[:,:,:,1:-1]
 
         low = INV_J1.apply(low, highs[0], self.g0o, self.g1o, self.o_dim,
                            self.ri_dim, mode)
         return low
+
+

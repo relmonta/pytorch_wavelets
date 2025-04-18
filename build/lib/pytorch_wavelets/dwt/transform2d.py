@@ -63,14 +63,12 @@ class DWTForward(nn.Module):
         """
         yh = []
         ll = x
-        t = x.dtype
-        device = x.device
         mode = lowlevel.mode_to_int(self.mode)
-        if self.h0_col.dtype != t and isinstance(self.h0_col, torch.Tensor):
-            self.h0_col = self.h0_col.to(device=device, dtype=t)
-            self.h1_col = self.h1_col.to(device=device, dtype=t)
-            self.h0_row = self.h0_row.to(device=device, dtype=t)
-            self.h1_row = self.h1_row.to(device=device, dtype=t)
+        if self.h0_col.dtype != x.dtype and isinstance(self.h0_col, torch.Tensor):
+            self.h0_col = self.h0_col.to(device=x.device, dtype=x.dtype)
+            self.h1_col = self.h1_col.to(device=x.device, dtype=x.dtype)
+            self.h0_row = self.h0_row.to(device=x.device, dtype=x.dtype)
+            self.h1_row = self.h1_row.to(device=x.device, dtype=x.dtype)
         # Avoiding repeated attribute lookups in the loop body
         h0_col, h1_col = self.h0_col, self.h1_col
         h0_row, h1_row = self.h0_row, self.h1_row
@@ -142,18 +140,16 @@ class DWTInverse(nn.Module):
         """
         yl, yh = coeffs
         ll = yl
-        t = yl.dtype
-        device = yl.device
         mode = lowlevel.mode_to_int(self.mode)
-        if self.g0_col.dtype != t and isinstance(self.g0_col, torch.Tensor):
-            self.h0_col = self.g0_col.to(
-                device=device, dtype=t)
-            self.g1_col = self.g1_col.to(
-                device=device, dtype=t)
-            self.g0_row = self.g0_row.to(
-                device=device, dtype=t)
-            self.g1_row = self.g1_row.to(
-                device=device, dtype=t)
+        if self.h0_col.dtype != coeffs.dtype and isinstance(self.h0_col, torch.Tensor):
+            self.h0_col = self.h0_col.to(
+                device=coeffs.device, dtype=coeffs.dtype)
+            self.h1_col = self.h1_col.to(
+                device=coeffs.device, dtype=coeffs.dtype)
+            self.h0_row = self.h0_row.to(
+                device=coeffs.device, dtype=coeffs.dtype)
+            self.h1_row = self.h1_row.to(
+                device=coeffs.device, dtype=coeffs.dtype)
         # Avoiding repeated attribute lookups in the loop body
         g0_col, g1_col = self.g0_col, self.g1_col
         g0_row, g1_row = self.g0_row, self.g1_row

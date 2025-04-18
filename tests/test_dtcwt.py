@@ -8,14 +8,12 @@ import datasets
 import torch
 import py3nvml
 from contextlib import contextmanager
+
 PRECISION_FLOAT = 3
 PRECISION_DOUBLE = 7
+PRECISION_HALF = 0
 
-HAVE_GPU = torch.cuda.is_available()
-if HAVE_GPU:
-    dev = torch.device('cuda')
-else:
-    dev = torch.device('cpu')
+dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @contextmanager
@@ -28,23 +26,45 @@ def set_double_precision():
         torch.set_default_dtype(old_prec)
 
 
-def setup():
-    global barbara, barbara_t
-    global bshape, bshape_half
-    global ch
+@contextmanager
+def set_half_precision():
+    old_prec = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(torch.float16)
+        yield
+    finally:
+        torch.set_default_dtype(old_prec)
+
+
+@pytest.fixture(scope="module")
+def barbara_data():
     py3nvml.grab_gpus(1, gpu_fraction=0.5, env_set_ok=True)
+
+    # Prepare the data
     barbara = datasets.barbara()
-    barbara = (barbara/barbara.max()).astype('float32')
+    barbara = (barbara / barbara.max()).astype('float32')
     barbara = barbara.transpose([2, 0, 1])
+
     bshape = list(barbara.shape)
     bshape_half = bshape[:]
     bshape_half[1] //= 2
-    barbara_t = torch.unsqueeze(
-        torch.tensor(barbara, dtype=torch.float32, device=dev), dim=0)
+
+    barbara_t = torch.unsqueeze(torch.tensor(
+        barbara, dtype=torch.float32, device=dev), dim=0)
     ch = barbara_t.shape[1]
 
+    return {
+        "barbara": barbara,
+        "barbara_t": barbara_t,
+        "bshape": bshape,
+        "bshape_half": bshape_half
+    }
 
-def test_barbara_loaded():
+
+def test_barbara_loaded(barbara_data):
+    barbara_t = barbara_data["barbara_t"]
+    barbara = barbara_data["barbara"]
+
     assert barbara.shape == (3, 512, 512)
     assert barbara.min() >= 0
     assert barbara.max() <= 1
@@ -52,40 +72,47 @@ def test_barbara_loaded():
     assert list(barbara_t.shape) == [1, 3, 512, 512]
 
 
-def test_simple():
+def test_simple(barbara_data):
+    barbara_t = barbara_data["barbara_t"]
     xfm = DTCWTForward(J=3).to(dev)
     Yl, Yh = xfm(barbara_t)
+
     assert len(Yl.shape) == 4
     assert len(Yh) == 3
     assert Yh[0].shape[-1] == 2
 
 
-def test_specific_wavelet():
+def test_specific_wavelet(barbara_data):
+    barbara_t = barbara_data["barbara_t"]
     xfm = DTCWTForward(J=3, biort='antonini', qshift='qshift_06').to(dev)
     Yl, Yh = xfm(barbara_t)
+
     assert len(Yl.shape) == 4
     assert len(Yh) == 3
     assert Yh[0].shape[-1] == 2
 
 
-def test_odd_rows():
+def test_odd_rows(barbara_data):
+    barbara_t = barbara_data["barbara_t"]
     xfm = DTCWTForward(J=3).to(dev)
-    Yl, Yh = xfm(barbara_t[:,:,:509])
+    Yl, Yh = xfm(barbara_t[:, :, :509])
 
 
-def test_odd_cols():
+def test_odd_cols(barbara_data):
+    barbara_t = barbara_data["barbara_t"]
     xfm = DTCWTForward(J=3).to(dev)
-    Yl, Yh = xfm(barbara_t[:,:,:,:509])
+    Yl, Yh = xfm(barbara_t[:, :, :, :509])
 
 
-def test_odd_rows_and_cols():
+def test_odd_rows_and_cols(barbara_data):
+    barbara_t = barbara_data["barbara_t"]
     xfm = DTCWTForward(J=3).to(dev)
-    Yl, Yh = xfm(barbara_t[:,:,:509,:509])
+    Yl, Yh = xfm(barbara_t[:, :, :509, :509])
 
 
 @pytest.mark.parametrize("J, o_dim", [
-    (1, 2), (1, 1),(2, 2), (2, 3),
-    (3, 2), (3, 1),(4, 4), (4, 3),
+    (1, 2), (1, 1), (2, 2), (2, 3),
+    (3, 2), (3, 1), (4, 4), (4, 3),
     (5, 2), (5, 1)
 ])
 def test_fwd(J, o_dim):
@@ -100,17 +127,17 @@ def test_fwd(J, o_dim):
         Yl.cpu(), yl, decimal=PRECISION_FLOAT)
     for i in range(len(yh)):
         for l in range(6):
-            ours_r = np.take(Yh[i][...,0].cpu().numpy(), l, o_dim)
-            ours_i = np.take(Yh[i][...,1].cpu().numpy(), l, o_dim)
+            ours_r = np.take(Yh[i][..., 0].cpu().numpy(), l, o_dim)
+            ours_i = np.take(Yh[i][..., 1].cpu().numpy(), l, o_dim)
             np.testing.assert_array_almost_equal(
-                ours_r, yh[i][:,:,l].real, decimal=PRECISION_FLOAT)
+                ours_r, yh[i][:, :, l].real, decimal=PRECISION_FLOAT)
             np.testing.assert_array_almost_equal(
-                ours_i, yh[i][:,:,l].imag, decimal=PRECISION_FLOAT)
+                ours_i, yh[i][:, :, l].imag, decimal=PRECISION_FLOAT)
 
 
 @pytest.mark.parametrize("J, o_dim", [
-    (1, 2), (1, 1),(2, 2), (2, 3),
-    (3, 2), (3, 1),(4, 4), (4, 3),
+    (1, 2), (1, 1), (2, 2), (2, 3),
+    (3, 2), (3, 1), (4, 4), (4, 3),
     (5, 2), (5, 1)
 ])
 def test_fwd_double(J, o_dim):
@@ -127,23 +154,58 @@ def test_fwd_double(J, o_dim):
         Yl.cpu(), yl, decimal=PRECISION_DOUBLE)
     for i in range(len(yh)):
         for l in range(6):
-            ours_r = np.take(Yh[i][...,0].cpu().numpy(), l, o_dim)
-            ours_i = np.take(Yh[i][...,1].cpu().numpy(), l, o_dim)
+            ours_r = np.take(Yh[i][..., 0].cpu().numpy(), l, o_dim)
+            ours_i = np.take(Yh[i][..., 1].cpu().numpy(), l, o_dim)
             np.testing.assert_array_almost_equal(
-                ours_r, yh[i][:,:,l].real, decimal=PRECISION_DOUBLE)
+                ours_r, yh[i][:, :, l].real, decimal=PRECISION_DOUBLE)
             np.testing.assert_array_almost_equal(
-                ours_i, yh[i][:,:,l].imag, decimal=PRECISION_DOUBLE)
+                ours_i, yh[i][:, :, l].imag, decimal=PRECISION_DOUBLE)
 
 
 @pytest.mark.parametrize("J, o_dim", [
-    (1, 2), (1, 1),(2, 2), (2, 3),
-    (3, 2), (3, 1),(4, 4), (4, 3),
+    (1, 2), (1, 1), (2, 2), (2, 3),
+    (3, 2), (3, 1), (4, 4), (4, 3),
+    (5, 2), (5, 1)
+])
+def test_fwd_half(J, o_dim):
+    # Set model to use half precision
+    with set_half_precision():
+        X = 100*np.random.randn(3, 5, 100, 100)
+        Xt = torch.tensor(X, dtype=torch.float16, device=dev)  # Use float16
+        # Ensure the model runs in half precision
+        xfm = DTCWTForward(J=J, o_dim=o_dim).to(dev)
+        Yl, Yh = xfm(Xt)
+
+    # Assert the output dtype is float16
+    assert Yl.dtype == torch.float16
+    f1 = Transform2d_np()
+    yl, yh = f1.forward(X, nlevels=J)
+
+    # Use a smaller precision value for half precision (adjusted for float16)
+    np.testing.assert_array_almost_equal(
+        Yl.cpu(), yl, decimal=PRECISION_HALF)
+    for i in range(len(yh)):
+        for l in range(6):
+            # Ensure the values are properly extracted and compared
+            ours_r = np.take(Yh[i][..., 0].cpu().numpy(), l, o_dim)
+            ours_i = np.take(Yh[i][..., 1].cpu().numpy(), l, o_dim)
+
+            # Use a more relaxed tolerance for half precision
+            np.testing.assert_array_almost_equal(
+                ours_r, yh[i][:, :, l].real, decimal=PRECISION_HALF)
+            np.testing.assert_array_almost_equal(
+                ours_i, yh[i][:, :, l].imag, decimal=PRECISION_HALF)
+
+
+@pytest.mark.parametrize("J, o_dim", [
+    (1, 2), (1, 1), (2, 2), (2, 3),
+    (3, 2), (3, 1), (4, 4), (4, 3),
     (5, 2), (5, 1)
 ])
 def test_fwd_skip_hps(J, o_dim):
     X = 100*np.random.randn(3, 5, 100, 100)
     # Randomly turn on/off the highpass outputs
-    hps = np.random.binomial(size=J, n=1,p=0.5).astype('bool')
+    hps = np.random.binomial(size=J, n=1, p=0.5).astype('bool')
     xfm = DTCWTForward(J=J, skip_hps=hps, o_dim=o_dim).to(dev)
     Yl, Yh = xfm(torch.tensor(X, dtype=torch.float32, device=dev))
     f1 = Transform2d_np()
@@ -156,12 +218,12 @@ def test_fwd_skip_hps(J, o_dim):
             assert Yh[j].shape == torch.Size([])
         else:
             for l in range(6):
-                ours_r = np.take(Yh[j][...,0].cpu().numpy(), l, o_dim)
-                ours_i = np.take(Yh[j][...,1].cpu().numpy(), l, o_dim)
+                ours_r = np.take(Yh[j][..., 0].cpu().numpy(), l, o_dim)
+                ours_i = np.take(Yh[j][..., 1].cpu().numpy(), l, o_dim)
                 np.testing.assert_array_almost_equal(
-                    ours_r, yh[j][:,:,l].real, decimal=PRECISION_FLOAT)
+                    ours_r, yh[j][:, :, l].real, decimal=PRECISION_FLOAT)
                 np.testing.assert_array_almost_equal(
-                    ours_i, yh[j][:,:,l].imag, decimal=PRECISION_FLOAT)
+                    ours_i, yh[j][:, :, l].imag, decimal=PRECISION_FLOAT)
 
 
 @pytest.mark.parametrize("scales", [
@@ -208,10 +270,10 @@ def test_fwd_ri_dim(o_dim, ri_dim):
         for l in range(6):
             ours = np.take(ours_r, l, o_dim)
             np.testing.assert_array_almost_equal(
-                ours, yh[i][:,:,l].real, decimal=PRECISION_FLOAT)
+                ours, yh[i][:, :, l].real, decimal=PRECISION_FLOAT)
             ours = np.take(ours_i, l, o_dim)
             np.testing.assert_array_almost_equal(
-                ours, yh[i][:,:,l].imag, decimal=PRECISION_FLOAT)
+                ours, yh[i][:, :, l].imag, decimal=PRECISION_FLOAT)
 
 
 @pytest.mark.parametrize("scales", [
@@ -230,19 +292,22 @@ def test_bwd_include_scale(scales):
 
     for ys in Ys:
         if ys.requires_grad:
-            ys.backward(torch.ones_like(ys),retain_graph=True)
+            ys.backward(torch.ones_like(ys), retain_graph=True)
 
 
 @pytest.mark.parametrize("J, o_dim", [
-    (1, 2), (1, 1),(2, 2), (2, 3),
-    (3, 2), (3, 1),(4, 4), (4, 3),
+    (1, 2), (1, 1), (2, 2), (2, 3),
+    (3, 2), (3, 1), (4, 4), (4, 3),
     (5, 2), (5, 1)
 ])
 def test_inv(J, o_dim):
     Yl = 100*np.random.randn(3, 5, 64, 64)
-    Yhr = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)] for j in range(4+J,4,-1)]
-    Yhi = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)] for j in range(4+J,4,-1)]
-    Yh1 = [np.stack(r, axis=2) + 1j*np.stack(i, axis=2) for r, i in zip(Yhr, Yhi)]
+    Yhr = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)]
+           for j in range(4+J, 4, -1)]
+    Yhi = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)]
+           for j in range(4+J, 4, -1)]
+    Yh1 = [np.stack(r, axis=2) + 1j*np.stack(i, axis=2)
+           for r, i in zip(Yhr, Yhi)]
     Yh2 = [np.stack((np.stack(r, axis=o_dim), np.stack(i, axis=o_dim)), axis=-1)
            for r, i in zip(Yhr, Yhi)]
     Yh2 = [torch.tensor(yh, dtype=torch.float32, device=dev) for yh in Yh2]
@@ -256,16 +321,19 @@ def test_inv(J, o_dim):
 
 
 @pytest.mark.parametrize("J, o_dim", [
-    (1, 2), (1, 1),(2, 2), (2, 3),
-    (3, 2), (3, 1),(4, 4), (4, 3),
+    (1, 2), (1, 1), (2, 2), (2, 3),
+    (3, 2), (3, 1), (4, 4), (4, 3),
     (5, 2), (5, 1)
 ])
 def test_inv_skip_hps(J, o_dim):
-    hps = np.random.binomial(size=J, n=1,p=0.5).astype('bool')
+    hps = np.random.binomial(size=J, n=1, p=0.5).astype('bool')
     Yl = 100*np.random.randn(3, 5, 64, 64)
-    Yhr = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)] for j in range(4+J,4,-1)]
-    Yhi = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)] for j in range(4+J,4,-1)]
-    Yh1 = [np.stack(r, axis=2) + 1j*np.stack(i, axis=2) for r, i in zip(Yhr, Yhi)]
+    Yhr = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)]
+           for j in range(4+J, 4, -1)]
+    Yhi = [[np.random.randn(3, 5, 2**j, 2**j) for l in range(6)]
+           for j in range(4+J, 4, -1)]
+    Yh1 = [np.stack(r, axis=2) + 1j*np.stack(i, axis=2)
+           for r, i in zip(Yhr, Yhi)]
     Yh2 = [np.stack((np.stack(r, axis=o_dim), np.stack(i, axis=o_dim)), axis=-1)
            for r, i in zip(Yhr, Yhi)]
     Yh2 = [torch.tensor(yh, dtype=torch.float32, device=dev) for yh in Yh2]
@@ -298,8 +366,8 @@ def test_inv_skip_hps(J, o_dim):
 def test_inv_ri_dim(ri_dim):
     Yl = 100*np.random.randn(3, 5, 64, 64)
     J = 3
-    Yhr = [np.random.randn(3, 5, 6, 2**j, 2**j) for j in range(4+J,4,-1)]
-    Yhi = [np.random.randn(3, 5, 6, 2**j, 2**j) for j in range(4+J,4,-1)]
+    Yhr = [np.random.randn(3, 5, 6, 2**j, 2**j) for j in range(4+J, 4, -1)]
+    Yhi = [np.random.randn(3, 5, 6, 2**j, 2**j) for j in range(4+J, 4, -1)]
     Yh1 = [yhr + 1j*yhi for yhr, yhi in zip(Yhr, Yhi)]
     Yh2 = [torch.tensor(np.stack((yhr, yhi), axis=ri_dim),
                         dtype=torch.float32, device=dev)
@@ -321,14 +389,14 @@ def test_inv_ri_dim(ri_dim):
 
 # Test end to end with numpy inputs
 @pytest.mark.parametrize("biort,qshift,size,J", [
-    ('antonini','qshift_a', (128,128), 3),
-    ('antonini','qshift_a', (126,126), 3),
-    ('legall','qshift_a', (99,100), 4),
-    ('near_sym_a','qshift_c', (104, 101), 2),
-    ('near_sym_b','qshift_d', (126, 126), 3),
+    ('antonini', 'qshift_a', (128, 128), 3),
+    ('antonini', 'qshift_a', (126, 126), 3),
+    ('legall', 'qshift_a', (99, 100), 4),
+    ('near_sym_a', 'qshift_c', (104, 101), 2),
+    ('near_sym_b', 'qshift_d', (126, 126), 3),
 ])
 def test_end2end(biort, qshift, size, J):
-    im = np.random.randn(5,6,*size).astype('float32')
+    im = np.random.randn(5, 6, *size).astype('float32')
     imt = torch.tensor(im, dtype=torch.float32, requires_grad=True, device=dev)
     xfm = DTCWTForward(J=J, biort=biort, qshift=qshift).to(dev)
     Yl, Yh = xfm(imt)
@@ -340,7 +408,8 @@ def test_end2end(biort, qshift, size, J):
     yl, yh = f_np.forward(im, nlevels=J)
     y2 = f_np.inverse(yl, yh)
 
-    np.testing.assert_array_almost_equal(y.detach().cpu(), y2, decimal=PRECISION_FLOAT)
+    np.testing.assert_array_almost_equal(
+        y.detach().cpu(), y2, decimal=PRECISION_FLOAT)
 
     # Test gradients are ok
     y.backward(torch.ones_like(y))
@@ -348,16 +417,16 @@ def test_end2end(biort, qshift, size, J):
 
 # Test gradients
 @pytest.mark.parametrize("biort,qshift,size,J", [
-    ('antonini','qshift_a', (128,128), 3),
-    ('antonini','qshift_a', (64,64), 3),
-    ('legall','qshift_a', (240,240), 4),
-    ('near_sym_a','qshift_c', (100, 100), 2),
-    ('near_sym_b','qshift_d', (120, 120), 3),
+    ('antonini', 'qshift_a', (128, 128), 3),
+    ('antonini', 'qshift_a', (64, 64), 3),
+    ('legall', 'qshift_a', (240, 240), 4),
+    ('near_sym_a', 'qshift_c', (100, 100), 2),
+    ('near_sym_b', 'qshift_d', (120, 120), 3),
 ])
 def test_gradients_fwd(biort, qshift, size, J):
     """ Gradient of forward function should be inverse function with filters
     swapped """
-    im = np.random.randn(5,6,*size).astype('float32')
+    im = np.random.randn(5, 6, *size).astype('float32')
     imt = torch.tensor(im, dtype=torch.float32, requires_grad=True, device=dev)
     xfm = DTCWTForward(biort=biort, qshift=qshift, J=J).to(dev)
     h0o, g0o, h1o, g1o = _biort(biort)
@@ -377,20 +446,21 @@ def test_gradients_fwd(biort, qshift, size, J):
         hps = [None,] * J
         hps[j] = g
         ref = xfm_grad((torch.zeros_like(Yl), hps))
-        np.testing.assert_array_almost_equal(imt.grad.detach().cpu(), ref.cpu())
+        np.testing.assert_array_almost_equal(
+            imt.grad.detach().cpu(), ref.cpu())
 
 
 @pytest.mark.parametrize("biort,qshift,size,J", [
-    ('antonini','qshift_a', (128,128), 3),
-    ('antonini','qshift_a', (64,64), 3),
-    ('legall','qshift_a', (240,240), 4),
-    ('near_sym_a','qshift_c', (100, 100), 2),
-    ('near_sym_b','qshift_d', (120, 120), 3),
+    ('antonini', 'qshift_a', (128, 128), 3),
+    ('antonini', 'qshift_a', (64, 64), 3),
+    ('legall', 'qshift_a', (240, 240), 4),
+    ('near_sym_a', 'qshift_c', (100, 100), 2),
+    ('near_sym_b', 'qshift_d', (120, 120), 3),
 ])
 def test_gradients_inv(biort, qshift, size, J):
     """ Gradient of forward function should be inverse function with filters
     swapped """
-    im = np.random.randn(5,6,*size).astype('float32')
+    im = np.random.randn(5, 6, *size).astype('float32')
     imt = torch.tensor(im, dtype=torch.float32, device=dev)
     ifm = DTCWTInverse(biort=biort, qshift=qshift).to(dev)
     h0o, g0o, h1o, g1o = _biort(biort)

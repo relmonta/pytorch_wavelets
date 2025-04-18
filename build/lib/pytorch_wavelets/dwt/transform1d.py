@@ -17,7 +17,6 @@ class DWT1DForward(nn.Module):
         mode (str): 'zero', 'symmetric', 'reflect' or 'periodization'. The
             padding scheme
         """
-
     def __init__(self, J=1, wave='db1', mode='zero'):
         super().__init__()
         if isinstance(wave, str):
@@ -50,12 +49,7 @@ class DWT1DForward(nn.Module):
         assert x.ndim == 3, "Can only handle 3d inputs (N, C, L)"
         highs = []
         x0 = x
-        t = x.dtype
-        device = x.device
         mode = lowlevel.mode_to_int(self.mode)
-        if self.h0.dtype != t and isinstance(self.h0, torch.Tensor):
-            self.h0 = self.h0.to(device=device, dtype=t)
-            self.h1 = self.h1.to(device=device, dtype=t)
 
         # Do a multilevel transform
         for j in range(self.J):
@@ -77,7 +71,6 @@ class DWT1DInverse(nn.Module):
         mode (str): 'zero', 'symmetric', 'reflect' or 'periodization'. The
             padding scheme
     """
-
     def __init__(self, wave='db1', mode='zero'):
         super().__init__()
         if isinstance(wave, str):
@@ -110,13 +103,6 @@ class DWT1DInverse(nn.Module):
         x0, highs = coeffs
         assert x0.ndim == 3, "Can only handle 3d inputs (N, C, L)"
         mode = lowlevel.mode_to_int(self.mode)
-        t = x0.dtype
-        device = x0.device
-        mode = lowlevel.mode_to_int(self.mode)
-        if self.g0.dtype != t and isinstance(self.g0, torch.Tensor):
-            self.h0 = self.g0.to(device=device, dtype=t)
-            self.g1 = self.g1.to(device=device, dtype=t)
-
         # Do a multilevel inverse transform
         for x1 in highs[::-1]:
             if x1 is None:

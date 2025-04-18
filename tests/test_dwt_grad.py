@@ -8,11 +8,7 @@ from contextlib import contextmanager
 ATOL = 1e-4
 EPS = 1e-4
 
-HAVE_GPU = torch.cuda.is_available()
-if HAVE_GPU:
-    dev = torch.device('cuda')
-else:
-    dev = torch.device('cpu')
+dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @contextmanager
@@ -25,15 +21,11 @@ def set_double_precision():
         torch.set_default_dtype(old_prec)
 
 
-def setup():
-    py3nvml.grab_gpus(1, gpu_fraction=0.5, env_set_ok=True)
-
-
 @pytest.mark.skip("These tests take a very long time to compute")
 @pytest.mark.parametrize("mode", [0, 1, 6])
 def test_fwd(mode):
     with set_double_precision():
-        x = torch.randn(1,3,16,16, device=dev, requires_grad=True)
+        x = torch.randn(1, 3, 16, 16, device=dev, requires_grad=True)
         xfm = DWTForward(J=2).to(dev)
 
     input = (x, xfm.h0_row, xfm.h1_row, xfm.h0_col, xfm.h1_col, mode)
@@ -44,8 +36,8 @@ def test_fwd(mode):
 @pytest.mark.parametrize("mode", [0, 1, 6])
 def test_inv_j2(mode):
     with set_double_precision():
-        low = torch.randn(1,3,16,16, device=dev, requires_grad=True)
-        high = torch.randn(1,3,3,16,16, device=dev, requires_grad=True)
+        low = torch.randn(1, 3, 16, 16, device=dev, requires_grad=True)
+        high = torch.randn(1, 3, 3, 16, 16, device=dev, requires_grad=True)
         ifm = DWTInverse().to(dev)
     input = (low, high, ifm.g0_row, ifm.g1_row, ifm.g0_col, ifm.g1_col, mode)
     gradcheck(SFB2D.apply, input, eps=EPS, atol=ATOL)
